@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Cloudflare Wrangler
+.wrangler/
+.dev.vars
+
+# Build output
+dist/
+.output/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Screenshots & debug images
+*.png
+*.jpg
+*.jpeg
+
+# Logs
+*.log

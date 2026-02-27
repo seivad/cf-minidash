@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zone Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- ═══ Login Screen ═══ -->
+  <div id="login-screen" class="screen">
+    <div class="login-container">
+      <div class="login-brand">
+        <div class="brand-icon">◈</div>
+        <h1>Zone Dashboard</h1>
+        <p class="brand-sub">Cloudflare zone management</p>
+      </div>
+      <form id="login-form" class="login-form">
+        <div class="input-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
+        </div>
+        <div class="input-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full" id="login-btn">
+          <span>Sign in</span>
+        </button>
+        <div id="login-error" class="error-msg hidden"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══ Main Dashboard ═══ -->
+  <div id="dashboard-screen" class="screen hidden">
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand-mark">◈</span>
+        <span class="brand-name">Zone Dashboard</span>
+      </div>
+      <div class="topbar-right">
+        <span id="user-email" class="user-email"></span>
+        <button id="logout-btn" class="btn btn-ghost btn-sm">Sign out</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <!-- Sidebar: Zone list -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <h3>Your Zones</h3>
+        </div>
+        <div id="zone-list" class="zone-list"></div>
+      </aside>
+
+      <!-- Main content -->
+      <main class="main-content" id="main-content">
+        <!-- No zone selected state -->
+        <div id="empty-state" class="empty-state">
+          <div class="empty-icon"><i class="fa-solid fa-cloud"></i></div>
+          <h2>Select a zone</h2>
+          <p>Choose a domain from the sidebar to get started</p>
+        </div>
+
+        <!-- Zone content (hidden until zone selected) -->
+        <div id="zone-content" class="zone-content hidden">
+          <!-- Zone header -->
+          <div class="zone-header">
+            <div class="zone-title-row">
+              <h2 id="zone-name"></h2>
+              <span id="zone-status" class="badge"></span>
+              <div class="zone-refresh">
+                <span id="zone-cached-at" class="tab-cached-at"></span>
+                <button class="btn-refresh" id="zone-refresh-btn" onclick="App.refreshAllTabs()" title="Refresh all data">
+                  <i class="fa-solid fa-arrows-rotate" id="zone-refresh-icon"></i>
+                </button>
+              </div>
+            </div>
+            <div id="zone-meta" class="zone-meta"></div>
+          </div>
+
+          <!-- Tab nav -->
+          <nav class="tab-nav" id="tab-nav">
+            <button class="tab active" data-tab="overview">Overview</button>
+            <button class="tab" data-tab="dns">DNS</button>
+            <button class="tab" data-tab="analytics">Analytics</button>
+            <button class="tab" data-tab="security">Security</button>
+            <button class="tab" data-tab="ssl">SSL / TLS</button>
+            <button class="tab" data-tab="bots">Bot Management</button>
+          </nav>
+
+          <!-- Tab panels -->
+          <div id="tab-overview" class="tab-panel active">
+            <div class="stat-grid" id="overview-stats"></div>
+          </div>
+
+          <div id="tab-dns" class="tab-panel hidden">
+            <div class="panel-toolbar">
+              <div class="search-bar">
+                <input type="text" id="dns-search" placeholder="Search records..." class="input-sm">
+                <select id="dns-type-filter" class="select-sm">
+                  <option value="">All types</option>
+                  <option value="A">A</option>
+                  <option value="AAAA">AAAA</option>
+                  <option value="CNAME">CNAME</option>
+                  <option value="MX">MX</option>
+                  <option value="TXT">TXT</option>
+                  <option value="NS">NS</option>
+                  <option value="SRV">SRV</option>
+                  <option value="CAA">CAA</option>
+                </select>
+              </div>
+              <button id="dns-add-btn" class="btn btn-primary btn-sm hidden">+ Add Record</button>
+            </div>
+            <div id="dns-table-container" class="table-container"></div>
+          </div>
+
+          <div id="tab-analytics" class="tab-panel hidden">
+            <div class="panel-toolbar">
+              <select id="analytics-range" class="select-sm">
+                <option value="1440">Last 24 hours</option>
+                <option value="10080">Last 7 days</option>
+                <option value="43200">Last 30 days</option>
+              </select>
+            </div>
+            <div id="analytics-content" class="analytics-grid"></div>
+          </div>
+
+          <div id="tab-security" class="tab-panel hidden">
+            <div id="security-content"></div>
+          </div>
+
+          <div id="tab-ssl" class="tab-panel hidden">
+            <div id="ssl-content"></div>
+          </div>
+
+          <div id="tab-bots" class="tab-panel hidden">
+            <div id="bots-content"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- DNS Record Modal -->
+    <div id="dns-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3 id="dns-modal-title">Add DNS Record</h3>
+          <button class="modal-close" id="dns-modal-close">&times;</button>
+        </div>
+        <form id="dns-form" class="modal-body">
+          <input type="hidden" id="dns-record-id">
+          <div class="form-row">
+            <div class="input-group">
+              <label for="dns-type">Type</label>
+              <select id="dns-type" required class="input-sm">
+                <option value="A">A</option>
+                <option value="AAAA">AAAA</option>
+                <option value="CNAME">CNAME</option>
+                <option value="MX">MX</option>
+                <option value="TXT">TXT</option>
+                <option value="NS">NS</option>
+                <option value="SRV">SRV</option>
+                <option value="CAA">CAA</option>
+              </select>
+            </div>
+            <div class="input-group flex-2">
+              <label for="dns-name">Name</label>
+              <input type="text" id="dns-name" required placeholder="@ or subdomain">
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="dns-content">Content</label>
+            <input type="text" id="dns-content" required placeholder="IP address or value">
+          </div>
+          <div class="form-row">
+            <div class="input-group">
+              <label for="dns-ttl">TTL</label>
+              <select id="dns-ttl" class="input-sm">
+                <option value="1">Auto</option>
+                <option value="60">1 min</option>
+                <option value="300">5 min</option>
+                <option value="600">10 min</option>
+                <option value="3600">1 hour</option>
+                <option value="86400">1 day</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="dns-proxied" class="checkbox-label">
+                <input type="checkbox" id="dns-proxied">
+                <span>Proxied (orange cloud)</span>
+              </label>
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="dns-comment">Comment</label>
+            <input type="text" id="dns-comment" placeholder="Optional note">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-ghost" id="dns-cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="dns-save">Save Record</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "cf-zone-dashboard",
+  "main": "src/index.js",
+  "compatibility_date": "2025-02-26",
+  "assets": {
+    "directory": "public"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "USER_CONFIG",
+      "id": "YOUR_KV_NAMESPACE_ID"
+    }
+  ],
+  "vars": {
+    "CF_API_TOKEN": "YOUR_SCOPED_API_TOKEN",
+    "CF_ACCOUNT_ID": "YOUR_ACCOUNT_ID",
+    "AUTH_SECRET": "YOUR_AUTH_SECRET_FOR_SESSIONS"
+  }
+}
