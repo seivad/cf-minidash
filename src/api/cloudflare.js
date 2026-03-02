@@ -5,6 +5,52 @@
 
 const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 
+export const SUPER_ADMIN_ROLE_ID = '33666b9c79b9a5273fc7344ff42f953d';
+
+export const STANDARD_SUB_USER_PERMISSIONS = [
+  'ssl:read', 'ssl:write',
+  'bots:read', 'bots:write',
+  'analytics:read',
+  'dns:read',
+  'cache:purge',
+];
+
+export const OPERATION_ALLOWLIST = [
+  { method: 'GET',   pattern: /^\/api\/zones\/?$/,                          permission: null },
+  { method: 'POST',  pattern: /^\/api\/zones\/refresh\/?$/,                 permission: null },
+  { method: 'GET',   pattern: /^\/api\/zones\/security-insights\/?$/,       permission: null },
+  { method: 'GET',   pattern: /^\/api\/zones\/[^/]+\/?$/,                   permission: null },
+  { method: 'GET',   pattern: /^\/api\/zones\/[^/]+\/rule-counts\/?$/,      permission: null },
+  { method: 'GET',   pattern: /^\/api\/zones\/[^/]+\/ssl\/?$/,              permission: 'ssl:read' },
+  { method: 'PATCH', pattern: /^\/api\/zones\/[^/]+\/ssl\/.+$/,             permission: 'ssl:write' },
+  { method: 'GET',   pattern: /^\/api\/zones\/[^/]+\/bots\/.+$/,            permission: 'bots:read' },
+  { method: 'PUT',   pattern: /^\/api\/zones\/[^/]+\/bots\/config\/?$/,     permission: 'bots:write' },
+  { method: 'GET',   pattern: /^\/api\/zones\/[^/]+\/dns\/?$/,              permission: 'dns:read' },
+  { method: 'GET',   pattern: /^\/api\/zones\/[^/]+\/analytics\/.*/,        permission: 'analytics:read' },
+  { method: 'POST',  pattern: /^\/api\/zones\/[^/]+\/purge\/?$/,            permission: 'cache:purge' },
+  { method: 'GET',   pattern: /^\/api\/me\/?$/,                             permission: null },
+  { method: 'GET',   pattern: /^\/api\/auth\/check\/?$/,                    permission: null },
+];
+
+/**
+ * Call CF API using a provided token (used during login only — token is not stored)
+ */
+export async function cfApiWithToken(token, path, options = {}) {
+  const { method = 'GET', params } = options;
+  let url = `${CF_API_BASE}${path}`;
+  if (params) url += `?${new URLSearchParams(params)}`;
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, errors: [{ message: err.message }] };
+  }
+}
+
 export async function cfApi(env, path, options = {}) {
   const { method = 'GET', body, params } = options;
 

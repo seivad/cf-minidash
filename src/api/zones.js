@@ -6,14 +6,8 @@ export const zonesRoutes = new Hono();
 /**
  * Fetch all zones from the Cloudflare account API
  */
-async function fetchZonesFromCF(env, userConfig) {
+async function fetchZonesFromCF(env, permissions) {
   const accountId = env.CF_ACCOUNT_ID;
-  const defaultPermissions = ['dns:read', 'analytics:read', 'bots:read'];
-
-  // Build a map of user-configured zone permissions for quick lookup
-  const userZoneMap = new Map(
-    (userConfig.zones || []).map(z => [z.id, z.permissions])
-  );
 
   const allZones = [];
   let page = 1;
@@ -32,7 +26,7 @@ async function fetchZonesFromCF(env, userConfig) {
         paused: z.paused,
         plan: z.plan?.name,
         nameServers: z.name_servers,
-        permissions: userZoneMap.get(z.id) || defaultPermissions,
+        permissions,
       });
     }
 
@@ -47,50 +41,63 @@ async function fetchZonesFromCF(env, userConfig) {
 /**
  * GET /api/zones
  * Returns cached zones from KV. If none cached, fetches from CF API and stores them.
+ * Sub-users only see zones in their session's allowedZones list.
  */
 zonesRoutes.get('/', async (c) => {
-  const email = c.get('userEmail');
-  const userConfig = c.get('userConfig');
+  const session = c.get('session');
+  const email = session.email;
   const kvKey = `zones:${email}`;
 
   // Try loading from KV cache
   const cached = await c.env.USER_CONFIG.get(kvKey, 'json');
   if (cached && cached.zones?.length) {
-    return c.json({ zones: cached.zones, lastRefreshed: cached.lastRefreshed });
+    const zones = filterZonesForSession(cached.zones, session);
+    return c.json({ zones, lastRefreshed: cached.lastRefreshed });
   }
 
   // No cache — fetch from CF API and store
-  const allZones = await fetchZonesFromCF(c.env, userConfig);
+  const allZones = await fetchZonesFromCF(c.env, session.permissions);
   const record = { zones: allZones, lastRefreshed: new Date().toISOString() };
   await c.env.USER_CONFIG.put(kvKey, JSON.stringify(record));
 
-  return c.json({ zones: allZones, lastRefreshed: record.lastRefreshed });
+  const zones = filterZonesForSession(allZones, session);
+  return c.json({ zones, lastRefreshed: record.lastRefreshed });
 });
 
 /**
  * POST /api/zones/refresh
  * Fetches fresh zones from CF API, merges with cached data, and stores in KV.
- * NOTE: Must be defined BEFORE /:zoneId routes
  */
 zonesRoutes.post('/refresh', async (c) => {
-  const email = c.get('userEmail');
-  const userConfig = c.get('userConfig');
+  const session = c.get('session');
+  const email = session.email;
   const kvKey = `zones:${email}`;
 
-  const allZones = await fetchZonesFromCF(c.env, userConfig);
+  const allZones = await fetchZonesFromCF(c.env, session.permissions);
   const record = { zones: allZones, lastRefreshed: new Date().toISOString() };
   await c.env.USER_CONFIG.put(kvKey, JSON.stringify(record));
 
-  return c.json({ zones: allZones, lastRefreshed: record.lastRefreshed });
+  const zones = filterZonesForSession(allZones, session);
+  return c.json({ zones, lastRefreshed: record.lastRefreshed });
 });
+
+/**
+ * Filter zones to only those the session is allowed to see.
+ * Super admins see all; sub-users see only their allowedZones.
+ */
+function filterZonesForSession(zones, session) {
+  if (session.isSuperAdmin) return zones;
+  const allowedIds = new Set(session.allowedZones.map(z => z.id));
+  return zones.filter(z => allowedIds.has(z.id));
+}
 
 /**
  * GET /api/zones/security-insights
  * Fetch account-level security insights, grouped by zone
- * NOTE: Must be defined BEFORE /:zoneId to avoid being swallowed by the param route
  */
 zonesRoutes.get('/security-insights', async (c) => {
-  const email = c.get('userEmail');
+  const session = c.get('session');
+  const email = session.email;
   const accountId = c.env.CF_ACCOUNT_ID;
   const kv = c.env.USER_CONFIG;
   const cacheKey = `security-insights:${email}`;
@@ -124,7 +131,6 @@ zonesRoutes.get('/security-insights', async (c) => {
     return c.json(data);
   }
 
-  // Response shape: data.result = { issues: [...], count, page, per_page }
   const issues = data.result?.issues || [];
   console.log(`[security-insights] fetched ${issues.length} issues`);
 
@@ -171,6 +177,18 @@ zonesRoutes.get('/security-insights', async (c) => {
     }
     total++;
   }
+
+  // Deduplicate issues within each zone by issueType
+  for (const key of Object.keys(byZone)) {
+    const seen = new Set();
+    byZone[key] = byZone[key].filter(issue => {
+      if (seen.has(issue.issueType)) return false;
+      seen.add(issue.issueType);
+      return true;
+    });
+  }
+
+  total = Object.values(byZone).reduce((sum, arr) => sum + arr.length, 0);
 
   const record = { insights: byZone, total, _cachedAt: new Date().toISOString() };
   await kv.put(cacheKey, JSON.stringify(record), { expirationTtl: 600 });

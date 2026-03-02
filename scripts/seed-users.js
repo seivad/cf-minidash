@@ -11,7 +11,7 @@
  *   node scripts/seed-users.js | npx wrangler kv bulk put --binding USER_CONFIG -
  */
 
-const AUTH_SECRET = 'YOUR_AUTH_SECRET_FOR_SESSIONS' // Must match wrangler.json vars.AUTH_SECRET
+const AUTH_SECRET = '1234567890' // Must match .dev.vars AUTH_SECRET
 
 async function hashPassword(password, secret) {
 	// This mimics the Worker's SHA-256 hashing

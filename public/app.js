@@ -27,8 +27,9 @@ const App = {
     const data = await res.json();
 
     if (res.status === 401) {
-      this.showLogin();
-      throw new Error('Unauthorized');
+      // Don't redirect to login during the login request itself
+      if (path !== '/auth/login') this.showLogin();
+      throw new Error(data.error || 'Unauthorized');
     }
 
     if (!res.ok) {
@@ -127,15 +128,14 @@ const App = {
     const errorEl = document.getElementById('login-error');
     errorEl.classList.add('hidden');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Signing in...';
+    btn.innerHTML = '<span class="spinner"></span> Verifying token...';
 
     try {
-      const email = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
+      const apiToken = document.getElementById('api-token').value;
 
       const data = await this.api('/auth/login', {
         method: 'POST',
-        body: { email, password },
+        body: { apiToken },
       });
 
       this.state.user = data;
@@ -302,6 +302,9 @@ const App = {
         visible = false;
       }
       if (tabName === 'bots' && !permissions.includes('bots:read') && !permissions.includes('bots:write')) {
+        visible = false;
+      }
+      if (tabName === 'ssl' && !permissions.includes('ssl:read') && !permissions.includes('ssl:write')) {
         visible = false;
       }
 
@@ -806,10 +809,15 @@ const App = {
       await this._securityInsightsPromise;
     }
 
-    // Combine zone-specific issues + account-level issues
+    // Combine zone-specific issues + account-level issues, dedup by issueType
     const zoneIssues = this.state.securityInsights[zone.id] || [];
     const accountIssues = this.state.securityInsights['_account'] || [];
-    const issues = [...zoneIssues, ...accountIssues];
+    const seen = new Set();
+    const issues = [...zoneIssues, ...accountIssues].filter(issue => {
+      if (seen.has(issue.issueType)) return false;
+      seen.add(issue.issueType);
+      return true;
+    });
     this.updateCachedAt(this.state.securityCachedAt);
 
     if (!issues.length) {

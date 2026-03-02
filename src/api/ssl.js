@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { cfApi, withCache } from './cloudflare.js';
+import { cfApi, hasPermission, withCache } from './cloudflare.js';
 
 export const sslRoutes = new Hono();
 
@@ -9,6 +9,12 @@ export const sslRoutes = new Hono();
  */
 sslRoutes.get('/', async (c) => {
   const zoneId = c.req.param('zoneId');
+  const zoneConfig = c.get('zoneConfig');
+
+  if (!hasPermission(zoneConfig, 'ssl:read') && !hasPermission(zoneConfig, 'ssl:write')) {
+    return c.json({ error: 'No SSL access' }, 403);
+  }
+
   const cacheKey = `tab:${zoneId}:ssl`;
 
   return withCache(c, cacheKey, async () => {
@@ -30,6 +36,11 @@ sslRoutes.get('/', async (c) => {
 
 /** Helper to patch a zone setting and invalidate SSL cache */
 async function patchSetting(c, settingName, body) {
+  const zoneConfig = c.get('zoneConfig');
+  if (!hasPermission(zoneConfig, 'ssl:write')) {
+    return c.json({ error: 'No permission to edit SSL settings' }, 403);
+  }
+
   const zoneId = c.req.param('zoneId');
   const data = await cfApi(c.env, `/zones/${zoneId}/settings/${settingName}`, {
     method: 'PATCH',

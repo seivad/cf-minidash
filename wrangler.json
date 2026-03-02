@@ -2,6 +2,7 @@
   "name": "cf-zone-dashboard",
   "main": "src/index.js",
   "compatibility_date": "2025-02-26",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "public"
   },
@@ -13,7 +14,14 @@
   ],
   "vars": {
     "CF_API_TOKEN": "YOUR_SCOPED_API_TOKEN",
-    "CF_ACCOUNT_ID": "YOUR_ACCOUNT_ID",
-    "AUTH_SECRET": "YOUR_AUTH_SECRET_FOR_SESSIONS"
-  }
+    "CF_ACCOUNT_ID": "YOUR_ACCOUNT_ID"
+  },
+  "triggers": {
+    "crons": ["0 8 * * *"]
+  },
+  "send_email": [
+    {
+      "name": "REPORT_EMAIL"
+    }
+  ]
 }

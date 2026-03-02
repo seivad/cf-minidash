@@ -5,13 +5,14 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "seed": "node scripts/seed-users.js"
+    "verify": "node scripts/verify-setup.js"
   },
   "dependencies": {
-    "hono": "^4.7.0"
+    "hono": "^4.7.0",
+    "mimetext": "^3.0.28"
   },
   "devDependencies": {
-    "wrangler": "^4.0.0",
-    "@cloudflare/workers-types": "^4.20250214.0"
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "wrangler": "^4.0.0"
   }
 }

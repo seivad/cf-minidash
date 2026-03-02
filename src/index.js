@@ -1,12 +1,13 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { getCookie, deleteCookie } from 'hono/cookie';
 import { dnsRoutes } from './api/dns.js';
 import { analyticsRoutes } from './api/analytics.js';
 import { botsRoutes } from './api/bots.js';
 import { zonesRoutes } from './api/zones.js';
 import { sslRoutes } from './api/ssl.js';
 import { authRoutes } from './api/auth.js';
+import { OPERATION_ALLOWLIST } from './api/cloudflare.js';
 
 const app = new Hono();
 
@@ -15,7 +16,6 @@ app.use('/api/*', cors());
 
 // ──────────────────────────────────────────────
 // Auth middleware — validates session cookie
-// If using Cloudflare Access, swap this for JWT validation
 // ──────────────────────────────────────────────
 app.use('/api/*', async (c, next) => {
   // Skip auth for login/logout
@@ -35,15 +35,26 @@ app.use('/api/*', async (c, next) => {
     return c.json({ error: 'Session expired' }, 401);
   }
 
-  // Load user config
-  const userConfig = await c.env.USER_CONFIG.get(`user:${session.email}`, 'json');
-  if (!userConfig) {
-    return c.json({ error: 'No access configured for this user' }, 403);
-  }
+  // Attach session to context
+  c.set('session', session);
 
-  // Attach to context
-  c.set('userEmail', session.email);
-  c.set('userConfig', userConfig);
+  // Operation allowlist enforcement for sub-users
+  if (!session.isSuperAdmin) {
+    const method = c.req.method;
+    const path = new URL(c.req.url).pathname;
+
+    const matched = OPERATION_ALLOWLIST.find(
+      op => op.method === method && op.pattern.test(path)
+    );
+
+    if (!matched) {
+      return c.json({ error: 'Operation not permitted' }, 403);
+    }
+
+    if (matched.permission && !session.permissions.includes(matched.permission)) {
+      return c.json({ error: `Missing permission: ${matched.permission}` }, 403);
+    }
+  }
 
   return next();
 });
@@ -55,12 +66,20 @@ app.use('/api/zones/:zoneId/*', async (c, next) => {
   const zoneId = c.req.param('zoneId');
   // Skip zone validation for non-zone-id paths
   if (zoneId === 'security-insights' || zoneId === 'refresh') return next();
-  const userConfig = c.get('userConfig');
 
-  // Check if zone has explicit permissions in user config, otherwise use defaults
-  const zoneConfig = userConfig.zones?.find(z => z.id === zoneId) || {
+  const session = c.get('session');
+
+  // Check if zone is in the user's allowed list
+  const allowed = session.allowedZones.find(z => z.id === zoneId);
+  if (!allowed) {
+    return c.json({ error: 'No access to this zone' }, 403);
+  }
+
+  // Build zoneConfig for downstream route handlers
+  const zoneConfig = {
     id: zoneId,
-    permissions: ['dns:read', 'analytics:read', 'bots:read'],
+    name: allowed.name,
+    permissions: session.permissions,
   };
 
   c.set('zoneConfig', zoneConfig);
@@ -79,15 +98,12 @@ app.route('/api/zones/:zoneId/ssl', sslRoutes);
 
 // User info endpoint
 app.get('/api/me', async (c) => {
-  const userConfig = c.get('userConfig');
-  const email = c.get('userEmail');
+  const session = c.get('session');
   return c.json({
-    email,
-    zones: userConfig.zones.map(z => ({
-      id: z.id,
-      name: z.name,
-      permissions: z.permissions
-    }))
+    email: session.email,
+    isSuperAdmin: session.isSuperAdmin,
+    permissions: session.permissions,
+    zones: session.allowedZones,
   });
 });
 
@@ -95,4 +111,10 @@ app.get('/api/me', async (c) => {
 // Everything else → static assets (public/)
 // ──────────────────────────────────────────────
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(controller, env, ctx) {
+    const { runSecurityReport } = await import('./scheduled/securityReport.js');
+    ctx.waitUntil(runSecurityReport(env));
+  },
+};

@@ -20,17 +20,16 @@
       </div>
       <form id="login-form" class="login-form">
         <div class="input-group">
-          <label for="email">Email</label>
-          <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
-        </div>
-        <div class="input-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" name="password" required placeholder="••••••••">
+          <label for="api-token">Cloudflare API Token</label>
+          <input type="password" id="api-token" name="api-token" required placeholder="Paste your API token">
         </div>
         <button type="submit" class="btn btn-primary btn-full" id="login-btn">
           <span>Sign in</span>
         </button>
         <div id="login-error" class="error-msg hidden"></div>
+        <p class="login-help">
+          <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Create an API token</a> with Zone:Read permission.
+        </p>
       </form>
     </div>
   </div>
