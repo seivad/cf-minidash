@@ -7,7 +7,7 @@ import { botsRoutes } from './api/bots.js';
 import { zonesRoutes } from './api/zones.js';
 import { sslRoutes } from './api/ssl.js';
 import { authRoutes } from './api/auth.js';
-import { OPERATION_ALLOWLIST } from './api/cloudflare.js';
+import { OPERATION_ALLOWLIST, decryptToken } from './api/cloudflare.js';
 
 const app = new Hono();
 
@@ -37,6 +37,20 @@ app.use('/api/*', async (c, next) => {
 
   // Attach session to context
   c.set('session', session);
+
+  // Decrypt user's API token from session
+  if (session.encryptedToken) {
+    try {
+      const userToken = await decryptToken(session.encryptedToken, c.env.AUTH_SECRET);
+      c.set('userToken', userToken);
+    } catch (err) {
+      // Decryption failed — tampered data or rotated key
+      console.error('[auth] Token decryption failed:', err.message);
+      await c.env.USER_CONFIG.delete(`session:${sessionId}`);
+      deleteCookie(c, 'session');
+      return c.json({ error: 'Session invalid — please log in again' }, 401);
+    }
+  }
 
   // Operation allowlist enforcement for sub-users
   if (!session.isSuperAdmin) {

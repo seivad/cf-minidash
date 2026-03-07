@@ -1,20 +1,18 @@
 import { Hono } from 'hono';
-import { cfApi, withCache } from './cloudflare.js';
+import { cfApi, userApiClient, withCache } from './cloudflare.js';
 
 export const zonesRoutes = new Hono();
 
 /**
- * Fetch all zones from the Cloudflare account API
+ * Fetch all zones from the Cloudflare account API using the provided token.
  */
-async function fetchZonesFromCF(env, permissions) {
-  const accountId = env.CF_ACCOUNT_ID;
-
+async function fetchZonesFromCF(env, permissions, token) {
   const allZones = [];
   let page = 1;
   while (true) {
     const data = await cfApi(env, '/zones', {
-      params: { 'account.id': accountId, page: String(page), per_page: '50', order: 'name', direction: 'asc' },
-    });
+      params: { page: String(page), per_page: '50', order: 'name', direction: 'asc' },
+    }, token);
 
     if (!data.success || !data.result?.length) break;
 
@@ -47,6 +45,7 @@ zonesRoutes.get('/', async (c) => {
   const session = c.get('session');
   const email = session.email;
   const kvKey = `zones:${email}`;
+  const token = c.get('userToken');
 
   // Try loading from KV cache
   const cached = await c.env.USER_CONFIG.get(kvKey, 'json');
@@ -56,7 +55,7 @@ zonesRoutes.get('/', async (c) => {
   }
 
   // No cache — fetch from CF API and store
-  const allZones = await fetchZonesFromCF(c.env, session.permissions);
+  const allZones = await fetchZonesFromCF(c.env, session.permissions, token);
   const record = { zones: allZones, lastRefreshed: new Date().toISOString() };
   await c.env.USER_CONFIG.put(kvKey, JSON.stringify(record));
 
@@ -72,8 +71,9 @@ zonesRoutes.post('/refresh', async (c) => {
   const session = c.get('session');
   const email = session.email;
   const kvKey = `zones:${email}`;
+  const token = c.get('userToken');
 
-  const allZones = await fetchZonesFromCF(c.env, session.permissions);
+  const allZones = await fetchZonesFromCF(c.env, session.permissions, token);
   const record = { zones: allZones, lastRefreshed: new Date().toISOString() };
   await c.env.USER_CONFIG.put(kvKey, JSON.stringify(record));
 
@@ -93,7 +93,8 @@ function filterZonesForSession(zones, session) {
 
 /**
  * GET /api/zones/security-insights
- * Fetch account-level security insights, grouped by zone
+ * Fetch account-level security insights, grouped by zone.
+ * Tiered fallback: user token → CF_CRON_TOKEN → graceful empty response.
  */
 zonesRoutes.get('/security-insights', async (c) => {
   const session = c.get('session');
@@ -115,15 +116,30 @@ zonesRoutes.get('/security-insights', async (c) => {
     }
   }
 
-  const data = await cfApi(c.env, `/accounts/${accountId}/security-center/insights`, {
-    params: { per_page: '100', dismissed: 'false' },
-  });
+  // Tiered token fallback for security insights
+  const userToken = c.get('userToken');
+  const cronToken = c.env.CF_CRON_TOKEN;
+  let data = null;
 
-  if (!data.success) {
+  // Try user's token first
+  data = await cfApi(c.env, `/accounts/${accountId}/security-center/insights`, {
+    params: { per_page: '100', dismissed: 'false' },
+  }, userToken);
+
+  // Fallback to cron token if user's token lacks permission
+  if (!data.success && cronToken) {
+    data = await cfApi(c.env, `/accounts/${accountId}/security-center/insights`, {
+      params: { per_page: '100', dismissed: 'false' },
+    }, cronToken);
+  }
+
+  if (!data || !data.success) {
     // On error, try returning stale cache
     const stale = await kv.get(cacheKey, 'json');
     if (stale) return c.json(stale);
-    return c.json({ error: 'Failed to fetch security insights', details: data.errors }, 500);
+
+    // Graceful empty response — token lacks permission
+    return c.json({ insights: {}, total: 0, _unavailable: true, _cachedAt: new Date().toISOString() });
   }
 
   // Debug mode: return raw response
@@ -202,12 +218,13 @@ zonesRoutes.get('/security-insights', async (c) => {
  */
 zonesRoutes.get('/:zoneId/rule-counts', async (c) => {
   const zoneId = c.req.param('zoneId');
+  const { api } = userApiClient(c);
 
   return withCache(c, `tab:${zoneId}:rule-counts`, async () => {
     const [cacheRuleset, securityRuleset, pageRules] = await Promise.all([
-      cfApi(c.env, `/zones/${zoneId}/rulesets/phases/http_request_cache_settings/entrypoint`),
-      cfApi(c.env, `/zones/${zoneId}/rulesets/phases/http_request_firewall_custom/entrypoint`),
-      cfApi(c.env, `/zones/${zoneId}/pagerules`, { params: { status: 'active' } }),
+      api(`/zones/${zoneId}/rulesets/phases/http_request_cache_settings/entrypoint`),
+      api(`/zones/${zoneId}/rulesets/phases/http_request_firewall_custom/entrypoint`),
+      api(`/zones/${zoneId}/pagerules`, { params: { status: 'active' } }),
     ]);
 
     return {
@@ -224,7 +241,8 @@ zonesRoutes.get('/:zoneId/rule-counts', async (c) => {
  */
 zonesRoutes.get('/:zoneId', async (c) => {
   const zoneId = c.req.param('zoneId');
-  const data = await cfApi(c.env, `/zones/${zoneId}`);
+  const { api } = userApiClient(c);
+  const data = await api(`/zones/${zoneId}`);
 
   if (!data.success) {
     return c.json({ error: 'Failed to fetch zone' }, 500);
@@ -260,7 +278,8 @@ zonesRoutes.post('/:zoneId/purge', async (c) => {
   }
 
   const body = await c.req.json();
-  const data = await cfApi(c.env, `/zones/${zoneId}/purge_cache`, {
+  const { api } = userApiClient(c);
+  const data = await api(`/zones/${zoneId}/purge_cache`, {
     method: 'POST',
     body,
   });

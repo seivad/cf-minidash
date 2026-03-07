@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { cfApi, hasPermission, withCache } from './cloudflare.js';
+import { userApiClient, hasPermission, withCache } from './cloudflare.js';
 
 export const sslRoutes = new Hono();
 
@@ -16,9 +16,10 @@ sslRoutes.get('/', async (c) => {
   }
 
   const cacheKey = `tab:${zoneId}:ssl`;
+  const { api } = userApiClient(c);
 
   return withCache(c, cacheKey, async () => {
-    const data = await cfApi(c.env, `/zones/${zoneId}/settings`);
+    const data = await api(`/zones/${zoneId}/settings`);
     if (!data.success) throw new Error('Failed to fetch zone settings');
 
     // Build a map of setting id → value for quick lookup
@@ -42,7 +43,8 @@ async function patchSetting(c, settingName, body) {
   }
 
   const zoneId = c.req.param('zoneId');
-  const data = await cfApi(c.env, `/zones/${zoneId}/settings/${settingName}`, {
+  const { api } = userApiClient(c);
+  const data = await api(`/zones/${zoneId}/settings/${settingName}`, {
     method: 'PATCH',
     body,
   });

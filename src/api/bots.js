@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { cfApi, cfGraphQL, hasPermission, withCache } from './cloudflare.js';
+import { userApiClient, hasPermission, withCache } from './cloudflare.js';
 
 export const botsRoutes = new Hono();
 
@@ -15,8 +15,10 @@ botsRoutes.get('/config', async (c) => {
     return c.json({ error: 'No bot management access' }, 403);
   }
 
+  const { api } = userApiClient(c);
+
   return withCache(c, `tab:${zoneId}:bots`, async () => {
-    const data = await cfApi(c.env, `/zones/${zoneId}/bot_management`);
+    const data = await api(`/zones/${zoneId}/bot_management`);
 
     if (!data.success) {
       throw new Error('Failed to fetch bot config');
@@ -55,7 +57,8 @@ botsRoutes.put('/config', async (c) => {
   if (body.suppress_session_score !== undefined) updates.suppress_session_score = body.suppress_session_score;
   if (body.auto_update_model !== undefined) updates.auto_update_model = body.auto_update_model;
 
-  const data = await cfApi(c.env, `/zones/${zoneId}/bot_management`, {
+  const { api } = userApiClient(c);
+  const data = await api(`/zones/${zoneId}/bot_management`, {
     method: 'PUT',
     body: updates,
   });
@@ -103,7 +106,8 @@ botsRoutes.get('/analytics', async (c) => {
     }
   `;
 
-  const data = await cfGraphQL(c.env, query, {
+  const { graphql } = userApiClient(c);
+  const data = await graphql(query, {
     zoneTag: zoneId,
     since,
     until,

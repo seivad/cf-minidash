@@ -9,12 +9,13 @@ const FROM_EMAIL = 'reports@5150studios.com.au';
  * Fetch all zones from the account (paginated)
  */
 async function fetchAllZones(env) {
+  const cronToken = env.CF_CRON_TOKEN;
   const zones = [];
   let page = 1;
   while (true) {
     const data = await cfApi(env, '/zones', {
       params: { 'account.id': env.CF_ACCOUNT_ID, page: String(page), per_page: '50' },
-    });
+    }, cronToken);
     if (!data.success || !data.result?.length) break;
     for (const z of data.result) {
       zones.push({ id: z.id, name: z.name });
@@ -30,9 +31,10 @@ async function fetchAllZones(env) {
  * Fetch security insights, filter to Critical/Moderate, group by zone
  */
 async function fetchAndGroupInsights(env, zones) {
+  const cronToken = env.CF_CRON_TOKEN;
   const data = await cfApi(env, `/accounts/${env.CF_ACCOUNT_ID}/security-center/insights`, {
     params: { per_page: '100', dismissed: 'false' },
-  });
+  }, cronToken);
 
   if (!data.success) {
     console.error('[securityReport] Failed to fetch insights:', data.errors);
@@ -93,7 +95,8 @@ async function fetchAndGroupInsights(env, zones) {
  * Fetch super admin email addresses from account members
  */
 async function fetchSuperAdminEmails(env) {
-  const data = await cfApi(env, `/accounts/${env.CF_ACCOUNT_ID}/members`);
+  const cronToken = env.CF_CRON_TOKEN;
+  const data = await cfApi(env, `/accounts/${env.CF_ACCOUNT_ID}/members`, {}, cronToken);
   if (!data.success) {
     console.error('[securityReport] Failed to fetch members:', data.errors);
     return [];

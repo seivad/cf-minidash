@@ -13,8 +13,9 @@
     }
   ],
   "vars": {
-    "CF_API_TOKEN": "YOUR_SCOPED_API_TOKEN",
-    "CF_ACCOUNT_ID": "YOUR_ACCOUNT_ID"
+    "CF_ACCOUNT_ID": "YOUR_ACCOUNT_ID",
+    "CF_CRON_TOKEN": "YOUR_CRON_API_TOKEN",
+    "AUTH_SECRET": "YOUR_AUTH_SECRET"
   },
   "triggers": {
     "crons": ["0 8 * * *"]

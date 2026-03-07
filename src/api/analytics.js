@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { cfGraphQL, hasPermission, withCache } from './cloudflare.js';
+import { userApiClient, hasPermission, withCache } from './cloudflare.js';
 
 export const analyticsRoutes = new Hono();
 
@@ -64,7 +64,8 @@ analyticsRoutes.get('/traffic', async (c) => {
     }
   `;
 
-  const data = await cfGraphQL(c.env, query, {
+  const { graphql } = userApiClient(c);
+  const data = await graphql(query, {
     zoneTag: zoneId,
     since,
     until,
@@ -121,7 +122,8 @@ analyticsRoutes.get('/security', async (c) => {
     }
   `;
 
-  const data = await cfGraphQL(c.env, query, {
+  const { graphql } = userApiClient(c);
+  const data = await graphql(query, {
     zoneTag: zoneId,
     since,
     until,
@@ -172,7 +174,8 @@ analyticsRoutes.get('/dns', async (c) => {
     }
   `;
 
-  const data = await cfGraphQL(c.env, query, {
+  const { graphql } = userApiClient(c);
+  const data = await graphql(query, {
     zoneTag: zoneId,
     since,
     until,
@@ -232,6 +235,8 @@ analyticsRoutes.get('/summary', async (c) => {
   const rangeBucket = useDaily ? (rangeSeconds > 604800 ? '30d' : '7d') : '24h';
   const cacheKey = `tab:${zoneId}:analytics:${rangeBucket}`;
 
+  const { graphql } = userApiClient(c);
+
   const fetchAnalytics = async () => {
     const query = `
       query AnalyticsSummary($zoneTag: string!, $since: Date!, $until: Date!) {
@@ -262,7 +267,7 @@ analyticsRoutes.get('/summary', async (c) => {
       }
     `;
 
-    const data = await cfGraphQL(c.env, query, {
+    const data = await graphql(query, {
       zoneTag: zoneId,
       since: sinceValue,
       until: untilValue,

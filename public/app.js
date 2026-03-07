@@ -70,6 +70,11 @@ const App = {
     // Logout
     document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
 
+    // Permissions modal
+    document.getElementById('permissions-btn').addEventListener('click', () => {
+      document.getElementById('permissions-modal').classList.remove('hidden');
+    });
+
     // Tabs
     document.getElementById('tab-nav').addEventListener('click', (e) => {
       if (e.target.classList.contains('tab')) {
@@ -510,7 +515,7 @@ const App = {
       `;
       this.bindChartTooltip('overview-chart', 'chart-tooltip');
     } catch (err) {
-      container.innerHTML = `<div class="loading">Failed to load overview: ${err.message}</div>`;
+      container.innerHTML = `<div class="loading">Failed to load overview: ${err.message}</div>${permissionHint('overview')}`;
     }
   },
 
@@ -581,7 +586,7 @@ const App = {
 
       this.renderDnsTable();
     } catch (err) {
-      container.innerHTML = `<div class="loading">Failed to load DNS: ${err.message}</div>`;
+      container.innerHTML = `<div class="loading">Failed to load DNS: ${err.message}</div>${permissionHint('dns')}`;
     }
   },
 
@@ -689,7 +694,7 @@ const App = {
       this.closeDnsModal();
       await this.loadDns();
     } catch (err) {
-      alert(`Failed to save: ${err.message}`);
+      showToast(`Failed to save: ${err.message}. Check your token has DNS > Edit permission.`, 'error');
     } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save Record';
@@ -704,7 +709,7 @@ const App = {
       await this.api(`/zones/${this.state.activeZone.id}/dns/${recordId}`, { method: 'DELETE' });
       await this.loadDns();
     } catch (err) {
-      alert(`Failed to delete: ${err.message}`);
+      showToast(`Failed to delete: ${err.message}. Check your token has DNS > Edit permission.`, 'error');
     }
   },
 
@@ -775,7 +780,7 @@ const App = {
 
       this.bindChartTooltip('analytics-chart', 'analytics-tooltip');
     } catch (err) {
-      container.innerHTML = `<div class="loading">Failed to load analytics: ${err.message}</div>`;
+      container.innerHTML = `<div class="loading">Failed to load analytics: ${err.message}</div>${permissionHint('analytics')}`;
     }
   },
 
@@ -827,6 +832,7 @@ const App = {
           <h3>No Security Issues</h3>
           <p>No active security insights found for this zone.</p>
         </div>
+        ${permissionHint('security')}
       `;
       return;
     }
@@ -872,6 +878,7 @@ const App = {
           </div>
         `).join('')}
       </div>
+      ${permissionHint('security')}
     `;
   },
 
@@ -896,6 +903,7 @@ const App = {
       };
 
       container.innerHTML = `
+        ${permissionHint('ssl')}
         <div class="ssl-settings">
           <div class="ssl-card">
             <div class="ssl-card-info">
@@ -978,7 +986,7 @@ const App = {
           showToast('SSL/TLS encryption mode updated');
         } catch (err) {
           select.value = original;
-          showToast(`Failed to update SSL mode: ${err.message}`, 'error');
+          showToast(`Failed to update SSL mode: ${err.message}. Check your token has Zone Settings > Edit permission.`, 'error');
         } finally {
           select.disabled = false;
         }
@@ -993,7 +1001,7 @@ const App = {
           showToast(`Minimum TLS version set to ${select.value}`);
         } catch (err) {
           select.value = original;
-          showToast(`Failed to update minimum TLS: ${err.message}`, 'error');
+          showToast(`Failed to update minimum TLS: ${err.message}. Check your token has Zone Settings > Edit permission.`, 'error');
         } finally {
           select.disabled = false;
         }
@@ -1007,7 +1015,7 @@ const App = {
           showToast(`Always Use HTTPS ${toggle.checked ? 'enabled' : 'disabled'}`);
         } catch (err) {
           toggle.checked = !toggle.checked;
-          showToast(`Failed to update Always Use HTTPS: ${err.message}`, 'error');
+          showToast(`Failed to update Always Use HTTPS: ${err.message}. Check your token has Zone Settings > Edit permission.`, 'error');
         } finally {
           toggle.disabled = false;
         }
@@ -1021,7 +1029,7 @@ const App = {
           showToast(`TLS 1.3 ${toggle.checked ? 'enabled' : 'disabled'}`);
         } catch (err) {
           toggle.checked = !toggle.checked;
-          showToast(`Failed to update TLS 1.3: ${err.message}`, 'error');
+          showToast(`Failed to update TLS 1.3: ${err.message}. Check your token has Zone Settings > Edit permission.`, 'error');
         } finally {
           toggle.disabled = false;
         }
@@ -1035,14 +1043,14 @@ const App = {
           showToast(`Automatic HTTPS Rewrites ${toggle.checked ? 'enabled' : 'disabled'}`);
         } catch (err) {
           toggle.checked = !toggle.checked;
-          showToast(`Failed to update HTTPS Rewrites: ${err.message}`, 'error');
+          showToast(`Failed to update HTTPS Rewrites: ${err.message}. Check your token has Zone Settings > Edit permission.`, 'error');
         } finally {
           toggle.disabled = false;
         }
       });
 
     } catch (err) {
-      container.innerHTML = `<div class="loading">Failed to load SSL/TLS settings: ${err.message}</div>`;
+      container.innerHTML = `<div class="loading">Failed to load SSL/TLS settings: ${err.message}</div>${permissionHint('ssl')}`;
     }
   },
 
@@ -1063,6 +1071,7 @@ const App = {
       this.updateCachedAt(data._cachedAt);
 
       container.innerHTML = `
+        ${permissionHint('bots')}
         <div class="bot-grid">
           ${botSetting('Bot Fight Mode', 'fight_mode', config.fight_mode, canEdit,
             'Automatically mitigate automated traffic detected as bots')}
@@ -1097,7 +1106,7 @@ const App = {
               });
             } catch (err) {
               e.target.checked = !value; // Revert
-              alert(`Failed to update: ${err.message}`);
+              showToast(`Failed to update: ${err.message}. Check your token has Bot Management > Edit permission.`, 'error');
             }
           });
         });
@@ -1112,13 +1121,13 @@ const App = {
                 body: { [field]: value },
               });
             } catch (err) {
-              alert(`Failed to update: ${err.message}`);
+              showToast(`Failed to update: ${err.message}. Check your token has Bot Management > Edit permission.`, 'error');
             }
           });
         });
       }
     } catch (err) {
-      container.innerHTML = `<div class="loading">Failed to load bot config: ${err.message}</div>`;
+      container.innerHTML = `<div class="loading">Failed to load bot config: ${err.message}</div>${permissionHint('bots')}`;
     }
   },
 };
@@ -1174,6 +1183,50 @@ function debounce(fn, delay) {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
+}
+
+/**
+ * Generates a collapsible permission hint block for a tab.
+ * @param {string} tab - Tab name (dns, ssl, analytics, bots, security)
+ * @returns {string} HTML string
+ */
+function permissionHint(tab) {
+  const perms = {
+    dns: [
+      ['View DNS records', 'Zone > DNS > Read'],
+      ['Edit DNS records', 'Zone > DNS > Edit'],
+    ],
+    ssl: [
+      ['View SSL/TLS settings', 'Zone > Zone Settings > Read'],
+      ['Edit SSL/TLS settings', 'Zone > Zone Settings > Edit'],
+    ],
+    analytics: [
+      ['View analytics', 'Zone > Analytics > Read'],
+    ],
+    bots: [
+      ['View bot config', 'Zone > Bot Management > Read'],
+      ['Edit bot config', 'Zone > Bot Management > Edit'],
+    ],
+    security: [
+      ['Security insights', 'Account > Security Center Insights > Read'],
+    ],
+    overview: [
+      ['Analytics data', 'Zone > Analytics > Read'],
+      ['Rule counts', 'Zone > Firewall Services > Read'],
+    ],
+  };
+
+  const rows = perms[tab];
+  if (!rows) return '';
+
+  return `
+    <details class="tab-perm-hint">
+      <summary><i class="fa-solid fa-key"></i> Required permissions for this tab</summary>
+      <table class="token-table">
+        ${rows.map(([feature, perm]) => `<tr><td>${feature}</td><td>${perm}</td></tr>`).join('')}
+      </table>
+    </details>
+  `;
 }
 
 function botSetting(label, field, value, canEdit, description) {

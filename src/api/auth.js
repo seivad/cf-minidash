@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
-import { cfApiWithToken, cfApi, SUPER_ADMIN_ROLE_ID, STANDARD_SUB_USER_PERMISSIONS } from './cloudflare.js';
+import { cfApiWithToken, encryptToken, SUPER_ADMIN_ROLE_ID, STANDARD_SUB_USER_PERMISSIONS } from './cloudflare.js';
 
 export const authRoutes = new Hono();
 
 /**
  * Derive a stable short identifier from a token (for KV cache keys and display).
- * Uses first 8 chars of SHA-256 hash — never stores the raw token.
+ * Uses first 12 chars of SHA-256 hash — never stores the raw token.
  */
 async function tokenFingerprint(token) {
   const data = new TextEncoder().encode(token);
@@ -16,13 +16,76 @@ async function tokenFingerprint(token) {
 }
 
 /**
+ * Probe which capabilities the user's token has on a sample zone.
+ * Returns an object like { ssl: true, bots: false, analytics: true, dns: true, ... }
+ */
+async function probeZoneCapabilities(token, sampleZoneId) {
+  const probes = {
+    ssl:       `/zones/${sampleZoneId}/settings`,
+    bots:      `/zones/${sampleZoneId}/bot_management`,
+    analytics: `/graphql`,  // will test via a lightweight query below
+    dns:       `/zones/${sampleZoneId}/dns_records?per_page=1`,
+  };
+
+  const results = {};
+  const probeEntries = Object.entries(probes).filter(([k]) => k !== 'analytics');
+
+  const settled = await Promise.allSettled(
+    probeEntries.map(async ([key, path]) => {
+      const res = await cfApiWithToken(token, path);
+      return [key, res.success === true];
+    })
+  );
+
+  for (const result of settled) {
+    if (result.status === 'fulfilled') {
+      const [key, ok] = result.value;
+      results[key] = ok;
+    }
+  }
+
+  // Lightweight analytics probe — just test the endpoint accepts auth
+  try {
+    const res = await cfApiWithToken(token, '/graphql');
+    // GraphQL endpoint returns data even on empty query; 403 means no access
+    results.analytics = !(res.errors?.[0]?.message || '').includes('authentication');
+  } catch {
+    results.analytics = false;
+  }
+
+  return results;
+}
+
+/**
+ * Probe account-level capabilities with the user's token.
+ */
+async function probeAccountCapabilities(token, accountId) {
+  const caps = { hasSecurityInsights: false, hasAccountMembers: false };
+
+  const [insightsRes, membersRes] = await Promise.allSettled([
+    cfApiWithToken(token, `/accounts/${accountId}/security-center/insights`, { params: { per_page: '1' } }),
+    cfApiWithToken(token, `/accounts/${accountId}/members`),
+  ]);
+
+  if (insightsRes.status === 'fulfilled' && insightsRes.value.success) {
+    caps.hasSecurityInsights = true;
+  }
+  if (membersRes.status === 'fulfilled' && membersRes.value.success) {
+    caps.hasAccountMembers = true;
+  }
+
+  return caps;
+}
+
+/**
  * POST /api/auth/login
  * CF API token login flow:
  * 1. Verify token works (try /user/tokens/verify, fall back to zone probe)
  * 2. Optionally get user email via /user
- * 3. Check if super admin via account members (if email found)
- * 4. Discover zones
- * 5. Create session in KV — user's token is discarded
+ * 3. Check if super admin via account members (using user's token)
+ * 4. Discover zones (using user's token only — no cross-reference)
+ * 5. Probe capabilities on a sample zone
+ * 6. Encrypt and store token in KV session
  */
 authRoutes.post('/login', async (c) => {
   const { apiToken } = await c.req.json();
@@ -63,11 +126,11 @@ authRoutes.post('/login', async (c) => {
     return c.json({ error: `Token verification failed: ${detail}` }, 401);
   }
 
-  // 2. Check super admin status (only possible if we have an email)
+  // 2. Check super admin status using user's own token (graceful if no permission)
   let isSuperAdmin = false;
 
   if (email) {
-    const members = await cfApi(c.env, `/accounts/${accountId}/members`);
+    const members = await cfApiWithToken(token, `/accounts/${accountId}/members`);
     if (members.success && members.result) {
       const member = members.result.find(m =>
         m.user?.email?.toLowerCase() === email
@@ -76,78 +139,55 @@ authRoutes.post('/login', async (c) => {
         isSuperAdmin = member.roles?.some(r => r.id === SUPER_ADMIN_ROLE_ID) || false;
       }
     }
+    // If token lacks permission for /members, isSuperAdmin stays false (graceful)
   }
 
-  // 3. Discover zones
-  let allowedZones = [];
-
-  if (isSuperAdmin) {
-    // Super admin sees all account zones (fetched with super-admin token)
-    let page = 1;
-    while (true) {
-      const data = await cfApi(c.env, '/zones', {
-        params: { 'account.id': accountId, page: String(page), per_page: '50', order: 'name', direction: 'asc' },
-      });
-      if (!data.success || !data.result?.length) break;
-      for (const z of data.result) {
-        allowedZones.push({ id: z.id, name: z.name });
-      }
-      if (page >= (data.result_info?.total_pages || 1)) break;
-      page++;
+  // 3. Discover zones using user's own token — no cross-reference needed
+  const allowedZones = [];
+  let page = 1;
+  while (true) {
+    const data = await cfApiWithToken(token, '/zones', {
+      params: { page: String(page), per_page: '50', order: 'name', direction: 'asc' },
+    });
+    if (!data.success || !data.result?.length) break;
+    for (const z of data.result) {
+      allowedZones.push({ id: z.id, name: z.name });
     }
-  } else {
-    // Non-admin: get zones the token can access
-    const userZones = [];
-    let page = 1;
-    while (true) {
-      const data = await cfApiWithToken(token, '/zones', {
-        params: { page: String(page), per_page: '50' },
-      });
-      if (!data.success || !data.result?.length) break;
-      for (const z of data.result) {
-        userZones.push({ id: z.id, name: z.name });
-      }
-      if (page >= (data.result_info?.total_pages || 1)) break;
-      page++;
-    }
-
-    // Cross-reference with account zones
-    const accountZoneIds = new Set();
-    page = 1;
-    while (true) {
-      const data = await cfApi(c.env, '/zones', {
-        params: { 'account.id': accountId, page: String(page), per_page: '50' },
-      });
-      if (!data.success || !data.result?.length) break;
-      for (const z of data.result) {
-        accountZoneIds.add(z.id);
-      }
-      if (page >= (data.result_info?.total_pages || 1)) break;
-      page++;
-    }
-
-    allowedZones = userZones.filter(z => accountZoneIds.has(z.id));
+    if (page >= (data.result_info?.total_pages || 1)) break;
+    page++;
   }
 
   if (!allowedZones.length) {
-    return c.json({ error: 'Token has no access to any zones in this account' }, 403);
+    return c.json({ error: 'Token has no access to any zones' }, 403);
   }
 
-  // 4. Build identity — use email if available, otherwise a token fingerprint
+  // 4. Probe capabilities on a sample zone
+  const sampleZoneId = allowedZones[0].id;
+  const zoneCapabilities = await probeZoneCapabilities(token, sampleZoneId);
+  const accountCapabilities = await probeAccountCapabilities(token, accountId);
+
+  const capabilities = { ...zoneCapabilities, ...accountCapabilities };
+
+  // 5. Build identity — use email if available, otherwise a token fingerprint
   const identity = email || `token:${await tokenFingerprint(token)}`;
 
-  // 5. Build permissions
+  // 6. Build permissions
   const permissions = isSuperAdmin
     ? [...STANDARD_SUB_USER_PERMISSIONS, 'dns:write']
     : [...STANDARD_SUB_USER_PERMISSIONS];
 
-  // 6. Create session in KV
+  // 7. Encrypt the user's token for storage
+  const encryptedToken = await encryptToken(token, c.env.AUTH_SECRET);
+
+  // 8. Create session in KV
   const sessionId = crypto.randomUUID();
   const session = {
     email: identity,
     isSuperAdmin,
     allowedZones,
     permissions,
+    capabilities,
+    encryptedToken,
     createdAt: Date.now(),
     expiresAt: Date.now() + (24 * 60 * 60 * 1000),
   };
@@ -166,12 +206,12 @@ authRoutes.post('/login', async (c) => {
     path: '/',
   });
 
-  // Token is discarded — never stored
   return c.json({
     ok: true,
     email: identity,
     isSuperAdmin,
     permissions,
+    capabilities,
     zones: allowedZones,
   });
 });
@@ -205,6 +245,7 @@ authRoutes.get('/check', async (c) => {
     email: session.email,
     isSuperAdmin: session.isSuperAdmin,
     permissions: session.permissions,
+    capabilities: session.capabilities,
     zones: session.allowedZones,
   });
 });

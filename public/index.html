@@ -27,9 +27,27 @@
           <span>Sign in</span>
         </button>
         <div id="login-error" class="error-msg hidden"></div>
-        <p class="login-help">
-          <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Create an API token</a> with Zone:Read permission.
-        </p>
+        <details class="login-help token-guide">
+          <summary>
+            <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Create an API token</a> — required permissions
+          </summary>
+          <div class="token-permissions">
+            <p class="token-section-label">Required (zone-level):</p>
+            <table class="token-table">
+              <tr><td>Zone list &amp; details</td><td>Zone &gt; Zone &gt; Read</td></tr>
+              <tr><td>DNS (view/edit)</td><td>Zone &gt; DNS &gt; Edit</td></tr>
+              <tr><td>SSL/TLS settings</td><td>Zone &gt; Zone Settings &gt; Edit</td></tr>
+              <tr><td>Analytics</td><td>Zone &gt; Analytics &gt; Read</td></tr>
+              <tr><td>Cache purge</td><td>Zone &gt; Cache Purge &gt; Purge</td></tr>
+              <tr><td>Bot management</td><td>Zone &gt; Bot Management &gt; Edit</td></tr>
+              <tr><td>Rule counts</td><td>Zone &gt; Firewall Services &gt; Read</td></tr>
+            </table>
+            <p class="token-section-label">Optional (account-level):</p>
+            <table class="token-table">
+              <tr><td>Security insights</td><td>Account &gt; Security Center Insights &gt; Read</td></tr>
+            </table>
+          </div>
+        </details>
       </form>
     </div>
   </div>
@@ -44,6 +62,7 @@
       </div>
       <div class="topbar-right">
         <span id="user-email" class="user-email"></span>
+        <button id="permissions-btn" class="btn btn-ghost btn-sm" title="Required API token permissions"><i class="fa-solid fa-key"></i> Permissions</button>
         <button id="logout-btn" class="btn btn-ghost btn-sm">Sign out</button>
       </div>
     </header>
@@ -206,6 +225,38 @@
             <button type="submit" class="btn btn-primary" id="dns-save">Save Record</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Permissions Modal -->
+  <div id="permissions-modal" class="modal hidden">
+    <div class="modal-backdrop" onclick="document.getElementById('permissions-modal').classList.add('hidden')"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Required API Token Permissions</h3>
+        <button class="modal-close" onclick="document.getElementById('permissions-modal').classList.add('hidden')">&times;</button>
+      </div>
+      <div class="modal-body permissions-modal-body">
+        <p class="token-section-label">Required (zone-level)</p>
+        <table class="token-table">
+          <tr><td>Zone list &amp; details</td><td>Zone &gt; Zone &gt; Read</td></tr>
+          <tr><td>DNS (view/edit)</td><td>Zone &gt; DNS &gt; Edit</td></tr>
+          <tr><td>SSL/TLS settings</td><td>Zone &gt; Zone Settings &gt; Edit</td></tr>
+          <tr><td>Analytics</td><td>Zone &gt; Analytics &gt; Read</td></tr>
+          <tr><td>Cache purge</td><td>Zone &gt; Cache Purge &gt; Purge</td></tr>
+          <tr><td>Bot management</td><td>Zone &gt; Bot Management &gt; Edit</td></tr>
+          <tr><td>Rule counts</td><td>Zone &gt; Firewall Services &gt; Read</td></tr>
+        </table>
+        <p class="token-section-label">Optional (account-level)</p>
+        <table class="token-table">
+          <tr><td>Security insights</td><td>Account &gt; Security Center Insights &gt; Read</td></tr>
+        </table>
+        <p style="margin-top: 1rem; font-size: 0.8125rem;">
+          <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener" style="color: var(--accent);">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Manage API Tokens on Cloudflare
+          </a>
+        </p>
       </div>
     </div>
   </div>

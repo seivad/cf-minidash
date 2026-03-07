@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { cfApi, hasPermission, withCache } from './cloudflare.js';
+import { userApiClient, hasPermission, withCache } from './cloudflare.js';
 
 export const dnsRoutes = new Hono();
 
@@ -15,6 +15,7 @@ dnsRoutes.get('/', async (c) => {
     return c.json({ error: 'No DNS access' }, 403);
   }
 
+  const { api } = userApiClient(c);
   const type = c.req.query('type');
   const search = c.req.query('search');
   const page = c.req.query('page') || '1';
@@ -49,7 +50,7 @@ dnsRoutes.get('/', async (c) => {
       params.per_page = c.req.query('per_page') || '50';
       params.order = 'type';
 
-      const data = await cfApi(c.env, `/zones/${zoneId}/dns_records`, { params });
+      const data = await api(`/zones/${zoneId}/dns_records`, { params });
       if (!data.success) throw new Error('Failed to fetch DNS records');
 
       return c.json({
@@ -67,7 +68,7 @@ dnsRoutes.get('/', async (c) => {
     const allRecords = [];
     let pg = 1;
     while (true) {
-      const data = await cfApi(c.env, `/zones/${zoneId}/dns_records`, {
+      const data = await api(`/zones/${zoneId}/dns_records`, {
         params: { page: String(pg), per_page: '100', order: 'type' },
       });
       if (!data.success) throw new Error('Failed to fetch DNS records');
@@ -99,7 +100,8 @@ dnsRoutes.get('/:recordId', async (c) => {
     return c.json({ error: 'No DNS access' }, 403);
   }
 
-  const data = await cfApi(c.env, `/zones/${zoneId}/dns_records/${recordId}`);
+  const { api } = userApiClient(c);
+  const data = await api(`/zones/${zoneId}/dns_records/${recordId}`);
 
   if (!data.success) {
     return c.json({ error: 'Record not found', details: data.errors }, 404);
@@ -140,7 +142,8 @@ dnsRoutes.post('/', async (c) => {
 
   if (body.priority !== undefined) allowed.priority = body.priority;
 
-  const data = await cfApi(c.env, `/zones/${zoneId}/dns_records`, {
+  const { api } = userApiClient(c);
+  const data = await api(`/zones/${zoneId}/dns_records`, {
     method: 'POST',
     body: allowed,
   });
@@ -178,7 +181,8 @@ dnsRoutes.patch('/:recordId', async (c) => {
   if (body.tags !== undefined) updates.tags = body.tags;
   if (body.priority !== undefined) updates.priority = body.priority;
 
-  const data = await cfApi(c.env, `/zones/${zoneId}/dns_records/${recordId}`, {
+  const { api } = userApiClient(c);
+  const data = await api(`/zones/${zoneId}/dns_records/${recordId}`, {
     method: 'PATCH',
     body: updates,
   });
@@ -203,7 +207,8 @@ dnsRoutes.delete('/:recordId', async (c) => {
     return c.json({ error: 'No permission to delete DNS records' }, 403);
   }
 
-  const data = await cfApi(c.env, `/zones/${zoneId}/dns_records/${recordId}`, {
+  const { api } = userApiClient(c);
+  const data = await api(`/zones/${zoneId}/dns_records/${recordId}`, {
     method: 'DELETE',
   });
 
